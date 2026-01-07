@@ -2,9 +2,12 @@ package com.example;
 
 import io.restassured.RestAssured;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import static io.restassured.RestAssured.*;
 import static org.hamcrest.Matchers.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 public class ApiTest extends BaseApiTest {
 
@@ -133,7 +136,7 @@ public class ApiTest extends BaseApiTest {
                             { "title": "flow test", "body": "demo", "userId": 1 }
                          """)
                         .when()
-                        .post("/posts")
+                        .post("/ap/users")
                         .then()
                         .statusCode(201)
                         .extract().path("id");
@@ -158,6 +161,95 @@ public class ApiTest extends BaseApiTest {
                 .then().statusCode(anyOf(is(404), is(200)));
     }
 
+    @ParameterizedTest
+    @ValueSource(ints = {1, 2, 3})
+    void getPost_shouldWorkForDifferentIds(int id) {
+
+        given()
+                .spec(requestSpec)
+                .when()
+                .get("/posts/" + id)
+                .then()
+                .statusCode(200);
+    }
+
+    @Test
+    void getWithRetry() {
+
+        int maxRetry = 3;
+        int attempt = 0;
+        int status = 0;
+
+        while (attempt < maxRetry) {
+            status =
+                    given()
+                            .spec(requestSpec)
+                            .when()
+                            .get("/posts")
+                            .then()
+                            .extract()
+                            .statusCode();
+
+            if (status == 200)
+                break;
+
+            attempt++;
+            try { Thread.sleep(1000); } catch (InterruptedException ignored) {}
+        }
+
+        assertEquals(200, status);
+    }
+
+    @Test
+    void addToCart_flow() {
+
+        // 1) LOGIN → TOKEN
+        RestAssured.baseURI = "https://reqres.in";
+
+        String loginBody = """
+        {
+          "email": "eve.holt@reqres.in",
+          "password": "cityslicka"
+        }
+        """;
+
+        String token =
+                given()
+                        .header("Content-Type", "application/json")
+                        .body(loginBody)
+                        .when()
+                        .post("/api/login")
+                        .then()
+                        .statusCode(200)
+                        .extract()
+                        .path("token");
+
+        // 2) ADD TO CART (simulated)
+        String cartBody = """
+        {
+           "productId": 5,
+           "quantity": 2
+        }
+        """;
+
+        given()
+                .header("Authorization", "Bearer " + token)
+                .header("Content-Type", "application/json")
+                .body(cartBody)
+                .when()
+                .post("/api/cart/2")
+                .then()
+                .statusCode(anyOf(is(200), is(201)));
+
+        // 3) CHECK CART (simulated GET)
+        given()
+                .header("Authorization", "Bearer " + token)
+                .when()
+                .get("/api/cart/2")
+                .then()
+                .statusCode(200)
+                .body("data.id", is(2));
+    }
 }
 
 
